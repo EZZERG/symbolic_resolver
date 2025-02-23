@@ -1,5 +1,5 @@
-from sympy import Matrix, Symbol, MatrixSymbol, MatMul, BlockMatrix as SymBlockMatrix
-from typing import Union
+from sympy import Matrix, Symbol, MatrixSymbol, MatMul, BlockMatrix as SymBlockMatrix, UnevaluatedExpr, Mul, Add, trace, symbols
+from typing import Union, Optional
 
 def matrix_to_scalar(expr):
     """Convert a 1x1 matrix multiplication result to a scalar."""
@@ -10,7 +10,7 @@ def matrix_to_scalar(expr):
 
 class BlockMatrix:
     def __init__(self, m1: Union[Matrix, MatrixSymbol], m2: Union[Matrix, MatrixSymbol], 
-                 m3: Union[Matrix, MatrixSymbol], m4: Union[Symbol, int, float]):
+                 m3: Union[Matrix, MatrixSymbol], m4: Union[Symbol, int, float], n: Optional[Symbol] = None):
         """
         Initialize a symbolic block matrix of the form:
         [[m1, m2],
@@ -19,38 +19,36 @@ class BlockMatrix:
         - m1 is (n-1) x (n-1)
         - m2 is (n-1) x 1
         - m3 is 1 x (n-1)
-        - m4 is a scalar symbol
+        - m4 is a scalar
+        
+        Parameters:
+        - n: Symbol representing the total dimension. If None, will be created as 'n'
         """
+        if n is None:
+            n = symbols('n')
+        
         # Get dimensions for validation
-        if isinstance(m1, MatrixSymbol):
-            m1_shape = m1.shape
-        else:
-            m1_shape = m1.shape
-            
-        if isinstance(m2, MatrixSymbol):
-            m2_shape = m2.shape
-        else:
-            m2_shape = m2.shape
-            
-        if isinstance(m3, MatrixSymbol):
-            m3_shape = m3.shape
-        else:
-            m3_shape = m3.shape
+        m1_shape = m1.shape
+        m2_shape = m2.shape
+        m3_shape = m3.shape
+        
+        # Store dimension
+        self.n = n
+        self.inner_dim = n - 1
         
         # Validate dimensions
-        if m1_shape[0] != m1_shape[1]:
-            raise ValueError("m1 must be square")
-        if m2_shape[0] != m1_shape[0] or m2_shape[1] != 1:
-            raise ValueError(f"m2 must be {m1_shape[0]}x1")
-        if m3_shape[0] != 1 or m3_shape[1] != m1_shape[0]:
-            raise ValueError(f"m3 must be 1x{m1_shape[0]}")
+        if m1_shape != (self.inner_dim, self.inner_dim):
+            raise ValueError(f"m1 must be {self.inner_dim}x{self.inner_dim}")
+        if m2_shape != (self.inner_dim, 1):
+            raise ValueError(f"m2 must be {self.inner_dim}x1")
+        if m3_shape != (1, self.inner_dim):
+            raise ValueError(f"m3 must be 1x{self.inner_dim}")
         
         self.m1 = m1
         self.m2 = m2
         self.m3 = m3
         self.m4 = m4
-        self.n = m1_shape[0] + 1  # Total dimension
-        
+    
     def __add__(self, other: 'BlockMatrix') -> 'BlockMatrix':
         """Add two block matrices."""
         if not isinstance(other, BlockMatrix):
@@ -62,7 +60,8 @@ class BlockMatrix:
             self.m1 + other.m1,
             self.m2 + other.m2,
             self.m3 + other.m3,
-            self.m4 + other.m4
+            self.m4 + other.m4,
+            n=self.n
         )
     
     def __mul__(self, other: 'BlockMatrix') -> 'BlockMatrix':
@@ -79,9 +78,9 @@ class BlockMatrix:
         new_m1 = self.m1 * other.m1 + self.m2 * other.m3
         new_m2 = self.m1 * other.m2 + self.m2 * other.m4
         new_m3 = self.m3 * other.m1 + self.m4 * other.m3
-        new_m4 = matrix_to_scalar(self.m3 * other.m2) + self.m4 * other.m4
+        new_m4 = trace(self.m3 * other.m2) + self.m4 * other.m4
         
-        return BlockMatrix(new_m1, new_m2, new_m3, new_m4)
+        return BlockMatrix(new_m1, new_m2, new_m3, new_m4, n=self.n)
     
     def inverse(self) -> 'BlockMatrix':
         """
@@ -99,16 +98,16 @@ class BlockMatrix:
         D = self.m4
         
         # Compute Schur complement: D - CA^(-1)B
-        schur = D - matrix_to_scalar(C * A_inv * B)
+        schur = D - trace(C * A_inv * B)  # C * A_inv * B is a scalar
         schur_inv = 1 / schur
         
         # Compute the blocks of the inverse
-        inv_m1 = A_inv + A_inv * B * schur_inv * C * A_inv
-        inv_m2 = -A_inv * B * schur_inv
+        inv_m1 = A_inv + schur_inv * A_inv * B * C * A_inv
+        inv_m2 = -schur_inv * A_inv * B
         inv_m3 = -schur_inv * C * A_inv
         inv_m4 = schur_inv
         
-        return BlockMatrix(inv_m1, inv_m2, inv_m3, inv_m4)
+        return BlockMatrix(inv_m1, inv_m2, inv_m3, inv_m4, n=self.n)
     
     def __str__(self) -> str:
         """String representation of the block matrix."""
