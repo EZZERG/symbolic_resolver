@@ -1,4 +1,4 @@
-from sympy import Matrix, Symbol, MatrixSymbol, MatMul, BlockMatrix as SymBlockMatrix, UnevaluatedExpr, Mul, Add, trace, symbols
+from sympy import Matrix, Symbol, MatrixSymbol, MatMul, BlockMatrix as SymBlockMatrix, UnevaluatedExpr, Mul, Add, trace, symbols, ZeroMatrix
 from typing import Union, Optional
 
 def matrix_to_scalar(expr):
@@ -78,8 +78,9 @@ class BlockMatrix:
         new_m1 = self.m1 * other.m1 + self.m2 * other.m3
         new_m2 = self.m1 * other.m2 + self.m2 * other.m4
         new_m3 = self.m3 * other.m1 + self.m4 * other.m3
-        new_m4 = trace(self.m3 * other.m2) + self.m4 * other.m4
-        
+        #new_m4 = trace(self.m3 * other.m2) + self.m4 * other.m4
+        new_m4 = (self.m3 * other.m2)[0] + self.m4 * other.m4
+
         return BlockMatrix(new_m1, new_m2, new_m3, new_m4, n=self.n)
     
     def inverse(self) -> 'BlockMatrix':
@@ -98,7 +99,9 @@ class BlockMatrix:
         D = self.m4
         
         # Compute Schur complement: D - CA^(-1)B
-        schur = D - trace(C * A_inv * B)  # C * A_inv * B is a scalar
+        #schur = D - trace(C * A_inv * B)  # C * A_inv * B is a scalar
+        schur = D - (C * A_inv * B)[0]
+        
         schur_inv = 1 / schur
         
         # Compute the blocks of the inverse
@@ -124,4 +127,42 @@ class BlockMatrix:
     
     def to_sympy(self) -> SymBlockMatrix:
         """Convert to a SymPy BlockMatrix."""
-        return SymBlockMatrix([[self.m1, self.m2], [self.m3, Matrix([self.m4])]]) 
+        return SymBlockMatrix([[self.m1, self.m2], [self.m3, Matrix([self.m4])]])
+
+class DiagonalBlockMatrix(BlockMatrix):
+    def __init__(self, m1: Union[Matrix, MatrixSymbol], m4: Union[Symbol, int, float], n: Optional[Symbol] = None):
+        """
+        Initialize a diagonal block matrix of the form:
+        [[m1,  0],
+         [0,  m4]]
+        where:
+        - m1 is (n-1) x (n-1)
+        - m4 is a scalar
+        
+        Parameters:
+        - m1: The upper-left block matrix
+        - m4: The lower-right scalar value
+        - n: Symbol representing the total dimension. If None, will be created as 'n'
+        """
+        if n is None:
+            n = symbols('n')
+            
+        # Create zero matrices for off-diagonal blocks
+        m2 = ZeroMatrix(n - 1, 1)
+        m3 = ZeroMatrix(1, n - 1)
+        
+        # Initialize using parent class
+        super().__init__(m1, m2, m3, m4, n=n)
+    
+    def inverse(self) -> 'BlockMatrix':
+        """
+        Compute the inverse of a diagonal block matrix.
+        For a diagonal block matrix, the inverse is much simpler:
+        [[m1^(-1),    0   ],
+         [   0,    1/m4   ]]
+        """
+        return DiagonalBlockMatrix(
+            self.m1**(-1),  # Inverse of m1
+            1/self.m4,      # Reciprocal of scalar m4
+            n=self.n
+        ) 
