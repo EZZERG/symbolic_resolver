@@ -21,15 +21,56 @@ x = Symbol('x')                              # scalar for last element
 # Create block vector
 v = BlockVector(v_fix, x, n=n)
 
-# Compute matrix-vector product
-result = M * v
-
-print("Block Matrix M:")
+print("Original Block Matrix M:")
 print(M)
-print("\nBlock Vector v:")
+print("\nOriginal Block Vector v:")
 print(v)
-print("\nMatrix-vector product M*v:")
-print(result)
+
+# Test scalar operations
+alpha = Symbol('alpha')  # Symbolic scalar for multiplication
+beta = Symbol('beta')   # Symbolic scalar for addition
+
+# Scalar operations with vector
+print("\nScalar operations with vector:")
+print("\n1. Scalar multiplication (alpha * v):")
+print(alpha * v)
+print("\n2. Scalar multiplication (v * alpha):")
+print(v * alpha)
+print("\n3. Scalar addition (beta + v):")
+print(beta + v)
+print("\n4. Scalar addition (v + beta):")
+print(v + beta)
+
+# Scalar operations with matrix
+print("\nScalar operations with matrix:")
+print("\n1. Scalar multiplication (alpha * M):")
+print(alpha * M)
+print("\n2. Scalar multiplication (M * alpha):")
+print(M * alpha)
+
+# Test combined operations
+print("\nCombined operations:")
+print("\n1. Matrix-vector product with scaled vector (M * (alpha * v)):")
+print(M * (alpha * v))
+print("\n2. Scaled matrix-vector product ((alpha * M) * v):")
+print((alpha * M) * v)
+
+# Create second vector for testing
+w_fix = MatrixSymbol('w', inner_dim, 1)
+y = Symbol('y')
+w = BlockVector(w_fix, y, n=n)
+
+print("\nVector operations with scalars:")
+print("\n1. Inner product of scaled vectors:")
+print("Inner product of (alpha * v) and w:")
+print((alpha * v).inner_product(w))
+
+# Test matrix operations with scalars
+print("\nMatrix operations with scalars:")
+N = BlockMatrix(m1, m2, m3, m4, n=n)  # Create a copy of M
+print("\n1. Product of scaled matrices:")
+print("(alpha * M) * (beta * N):")
+print((alpha * M) * (beta * N))
 
 # Let's also test vector addition and inner product
 v2_fix = MatrixSymbol('w', inner_dim, 1)

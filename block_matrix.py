@@ -40,18 +40,44 @@ class BlockVector:
         self.v_fix = v_fix
         self.last_element = last_element
     
-    def __add__(self, other: 'BlockVector') -> 'BlockVector':
-        """Add two block vectors."""
-        if not isinstance(other, BlockVector):
-            raise TypeError("Can only add BlockVector with another BlockVector")
-        if self.n != other.n:
-            raise ValueError("Vectors must have the same dimensions")
-        
+    def __add__(self, other: Union['BlockVector', Symbol, int, float]) -> 'BlockVector':
+        """Add a block vector with another block vector or a scalar."""
+        if isinstance(other, BlockVector):
+            if self.n != other.n:
+                raise ValueError("Vectors must have the same dimensions")
+            return BlockVector(
+                self.v_fix + other.v_fix,
+                self.last_element + other.last_element,
+                n=self.n
+            )
+        elif isinstance(other, (Symbol, int, float)):
+            # For scalar addition, create a vector of ones and multiply by scalar
+            ones_vec = MatrixSymbol('temp', self.inner_dim, 1) * 1
+            return BlockVector(
+                self.v_fix + ones_vec * other,
+                self.last_element + other,
+                n=self.n
+            )
+        else:
+            raise TypeError("Can only add BlockVector with another BlockVector or scalar")
+    
+    def __radd__(self, other: Union[Symbol, int, float]) -> 'BlockVector':
+        """Add a scalar with this block vector."""
+        return self.__add__(other)
+    
+    def __mul__(self, other: Union[Symbol, int, float]) -> 'BlockVector':
+        """Multiply this block vector by a scalar."""
+        if not isinstance(other, (Symbol, int, float)):
+            raise TypeError("Can only multiply BlockVector with a scalar")
         return BlockVector(
-            self.v_fix + other.v_fix,
-            self.last_element + other.last_element,
+            self.v_fix * other,  # SymPy handles matrix-scalar multiplication
+            self.last_element * other,
             n=self.n
         )
+    
+    def __rmul__(self, other: Union[Symbol, int, float]) -> 'BlockVector':
+        """Multiply a scalar with this block vector."""
+        return self.__mul__(other)
     
     def inner_product(self, other: 'BlockVector') -> Symbol:
         """
@@ -65,7 +91,7 @@ class BlockVector:
             raise ValueError("Vectors must have the same dimensions")
         
         # Compute v1^T * v2 (a 1x1 matrix)
-        v_product = (self.v_fix.transpose() * other.v_fix)[0]
+        v_product = trace(self.v_fix.transpose() * other.v_fix)
         # Add the product of the last elements
         return v_product + self.last_element * other.last_element
     
@@ -81,6 +107,30 @@ class BlockVector:
     def to_sympy(self) -> SymBlockMatrix:
         """Convert to a SymPy BlockMatrix."""
         return SymBlockMatrix([[self.v_fix], [Matrix([self.last_element])]])
+
+    def __sub__(self, other: 'BlockVector') -> 'BlockVector':
+        """Subtract another block vector from this one."""
+        if not isinstance(other, BlockVector):
+            raise TypeError("Can only subtract BlockVector from another BlockVector")
+        if self.n != other.n:
+            raise ValueError("Vectors must have the same dimensions")
+        return BlockVector(
+            self.v_fix - other.v_fix,
+            self.last_element - other.last_element,
+            n=self.n
+        )
+    
+    def __rsub__(self, other: 'BlockVector') -> 'BlockVector':
+        """Subtract this block vector from another."""
+        return -self + other
+
+    def __neg__(self) -> 'BlockVector':
+        """Return the negation of this block vector."""
+        return BlockVector(
+            -self.v_fix,
+            -self.last_element,
+            n=self.n
+        )
 
 class BlockMatrix:
     def __init__(self, m1: Union[Matrix, MatrixSymbol], m2: Union[Matrix, MatrixSymbol], 
@@ -124,12 +174,11 @@ class BlockMatrix:
         self.m4 = m4
     
     def __add__(self, other: 'BlockMatrix') -> 'BlockMatrix':
-        """Add two block matrices."""
+        """Add a block matrix with another block matrix."""
         if not isinstance(other, BlockMatrix):
             raise TypeError("Can only add BlockMatrix with another BlockMatrix")
         if self.n != other.n:
             raise ValueError("Matrices must have the same dimensions")
-        
         return BlockMatrix(
             self.m1 + other.m1,
             self.m2 + other.m2,
@@ -138,8 +187,12 @@ class BlockMatrix:
             n=self.n
         )
     
-    def __mul__(self, other: Union['BlockMatrix', 'BlockVector']) -> Union['BlockMatrix', 'BlockVector']:
-        """Multiply with another block matrix or block vector."""
+    def __radd__(self, other) -> 'BlockMatrix':
+        """Add this block matrix with another block matrix."""
+        return self.__add__(other)
+    
+    def __mul__(self, other: Union['BlockMatrix', 'BlockVector', Symbol, int, float]) -> Union['BlockMatrix', 'BlockVector']:
+        """Multiply with another block matrix, block vector, or scalar."""
         if isinstance(other, BlockMatrix):
             if self.n != other.n:
                 raise ValueError("Matrices must have the same dimensions")
@@ -151,7 +204,7 @@ class BlockMatrix:
             new_m1 = self.m1 * other.m1 + self.m2 * other.m3
             new_m2 = self.m1 * other.m2 + self.m2 * other.m4
             new_m3 = self.m3 * other.m1 + self.m4 * other.m3
-            new_m4 = (self.m3 * other.m2)[0] + self.m4 * other.m4
+            new_m4 = trace(self.m3 * other.m2) + self.m4 * other.m4
             
             return BlockMatrix(new_m1, new_m2, new_m3, new_m4, n=self.n)
             
@@ -164,12 +217,33 @@ class BlockMatrix:
             # [[m1*v_fix + m2*last_element], [m3*v_fix + m4*last_element]]
             
             new_v_fix = self.m1 * other.v_fix + self.m2 * other.last_element
-            new_last_element = (self.m3 * other.v_fix)[0] + self.m4 * other.last_element
+            new_last_element = trace(self.m3 * other.v_fix) + self.m4 * other.last_element
             
             return BlockVector(new_v_fix, new_last_element, n=self.n)
             
+        elif isinstance(other, (Symbol, int, float)):
+            return BlockMatrix(
+                self.m1 * other,  # SymPy handles matrix-scalar multiplication
+                self.m2 * other,
+                self.m3 * other,
+                self.m4 * other,
+                n=self.n
+            )
         else:
-            raise TypeError("Can only multiply BlockMatrix with BlockMatrix or BlockVector")
+            raise TypeError("Can only multiply BlockMatrix with BlockMatrix, BlockVector, or scalar")
+    
+    def __rmul__(self, other):
+        """Multiply a scalar with this block matrix."""
+        from sympy import Expr
+        if not isinstance(other, (Symbol, int, float, Expr)):
+            raise TypeError("Can only multiply scalar with BlockMatrix")
+        return BlockMatrix(
+            other * self.m1,
+            other * self.m2,
+            other * self.m3,
+            other * self.m4,
+            n=self.n
+        )
     
     def inverse(self) -> 'BlockMatrix':
         """
@@ -188,7 +262,7 @@ class BlockMatrix:
         
         # Compute Schur complement: D - CA^(-1)B
         #schur = D - trace(C * A_inv * B)  # C * A_inv * B is a scalar
-        schur = D - (C * A_inv * B)[0]
+        schur = D - trace(C * A_inv * B)
         
         schur_inv = 1 / schur
         
@@ -216,6 +290,34 @@ class BlockMatrix:
     def to_sympy(self) -> SymBlockMatrix:
         """Convert to a SymPy BlockMatrix."""
         return SymBlockMatrix([[self.m1, self.m2], [self.m3, Matrix([self.m4])]])
+
+    def __sub__(self, other: 'BlockMatrix') -> 'BlockMatrix':
+        """Subtract another block matrix from this one."""
+        if not isinstance(other, BlockMatrix):
+            raise TypeError("Can only subtract BlockMatrix from another BlockMatrix")
+        if self.n != other.n:
+            raise ValueError("Matrices must have the same dimensions")
+        return BlockMatrix(
+            self.m1 - other.m1,
+            self.m2 - other.m2,
+            self.m3 - other.m3,
+            self.m4 - other.m4,
+            n=self.n
+        )
+    
+    def __rsub__(self, other: 'BlockMatrix') -> 'BlockMatrix':
+        """Subtract this block matrix from another."""
+        return -self + other
+
+    def __neg__(self) -> 'BlockMatrix':
+        """Return the negation of this block matrix."""
+        return BlockMatrix(
+            -self.m1,
+            -self.m2,
+            -self.m3,
+            -self.m4,
+            n=self.n
+        )
 
 class DiagonalBlockMatrix(BlockMatrix):
     def __init__(self, m1: Union[Matrix, MatrixSymbol], m4: Union[Symbol, int, float], n: Optional[Symbol] = None):
