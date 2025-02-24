@@ -8,6 +8,80 @@ def matrix_to_scalar(expr):
             return expr[0]  # Get the scalar value
     return expr
 
+class BlockVector:
+    def __init__(self, v_fix: Union[Matrix, MatrixSymbol], last_element: Union[Symbol, int, float], n: Optional[Symbol] = None):
+        """
+        Initialize a block vector of the form:
+        [[v_fix],
+         [last_element]]
+        where:
+        - v_fix is (n-1) x 1
+        - last_element is a scalar
+        
+        Parameters:
+        - v_fix: The upper vector block
+        - last_element: The last scalar element
+        - n: Symbol representing the total dimension. If None, will be created as 'n'
+        """
+        if n is None:
+            n = symbols('n')
+            
+        # Store dimension
+        self.n = n
+        self.inner_dim = n - 1
+        
+        # Get dimensions for validation
+        v_fix_shape = v_fix.shape
+        
+        # Validate dimensions
+        if v_fix_shape != (self.inner_dim, 1):
+            raise ValueError(f"v_fix must be {self.inner_dim}x1")
+        
+        self.v_fix = v_fix
+        self.last_element = last_element
+    
+    def __add__(self, other: 'BlockVector') -> 'BlockVector':
+        """Add two block vectors."""
+        if not isinstance(other, BlockVector):
+            raise TypeError("Can only add BlockVector with another BlockVector")
+        if self.n != other.n:
+            raise ValueError("Vectors must have the same dimensions")
+        
+        return BlockVector(
+            self.v_fix + other.v_fix,
+            self.last_element + other.last_element,
+            n=self.n
+        )
+    
+    def inner_product(self, other: 'BlockVector') -> Symbol:
+        """
+        Compute the inner product between two block vectors.
+        For vectors [[v1], [s1]] and [[v2], [s2]], the inner product is:
+        v1^T * v2 + s1 * s2
+        """
+        if not isinstance(other, BlockVector):
+            raise TypeError("Can only compute inner product with another BlockVector")
+        if self.n != other.n:
+            raise ValueError("Vectors must have the same dimensions")
+        
+        # Compute v1^T * v2 (a 1x1 matrix)
+        v_product = (self.v_fix.transpose() * other.v_fix)[0]
+        # Add the product of the last elements
+        return v_product + self.last_element * other.last_element
+    
+    def __str__(self) -> str:
+        """String representation of the block vector."""
+        return f"BlockVector(\n{self.v_fix},\n{self.last_element})"
+    
+    def _repr_latex_(self) -> str:
+        """LaTeX representation for Jupyter notebook display."""
+        sym_vector = SymBlockMatrix([[self.v_fix], [Matrix([self.last_element])]])
+        return sym_vector._repr_latex_()
+    
+    def to_sympy(self) -> SymBlockMatrix:
+        """Convert to a SymPy BlockMatrix."""
+        return SymBlockMatrix([[self.v_fix], [Matrix([self.last_element])]])
+
 class BlockMatrix:
     def __init__(self, m1: Union[Matrix, MatrixSymbol], m2: Union[Matrix, MatrixSymbol], 
                  m3: Union[Matrix, MatrixSymbol], m4: Union[Symbol, int, float], n: Optional[Symbol] = None):
@@ -64,24 +138,38 @@ class BlockMatrix:
             n=self.n
         )
     
-    def __mul__(self, other: 'BlockMatrix') -> 'BlockMatrix':
-        """Multiply two block matrices."""
-        if not isinstance(other, BlockMatrix):
-            raise TypeError("Can only multiply BlockMatrix with another BlockMatrix")
-        if self.n != other.n:
-            raise ValueError("Matrices must have the same dimensions")
-        
-        # Block matrix multiplication formula:
-        # [[a1, a2], [a3, a4]] * [[b1, b2], [b3, b4]] =
-        # [[a1*b1 + a2*b3, a1*b2 + a2*b4], [a3*b1 + a4*b3, a3*b2 + a4*b4]]
-        
-        new_m1 = self.m1 * other.m1 + self.m2 * other.m3
-        new_m2 = self.m1 * other.m2 + self.m2 * other.m4
-        new_m3 = self.m3 * other.m1 + self.m4 * other.m3
-        #new_m4 = trace(self.m3 * other.m2) + self.m4 * other.m4
-        new_m4 = (self.m3 * other.m2)[0] + self.m4 * other.m4
-
-        return BlockMatrix(new_m1, new_m2, new_m3, new_m4, n=self.n)
+    def __mul__(self, other: Union['BlockMatrix', 'BlockVector']) -> Union['BlockMatrix', 'BlockVector']:
+        """Multiply with another block matrix or block vector."""
+        if isinstance(other, BlockMatrix):
+            if self.n != other.n:
+                raise ValueError("Matrices must have the same dimensions")
+            
+            # Block matrix multiplication formula:
+            # [[a1, a2], [a3, a4]] * [[b1, b2], [b3, b4]] =
+            # [[a1*b1 + a2*b3, a1*b2 + a2*b4], [a3*b1 + a4*b3, a3*b2 + a4*b4]]
+            
+            new_m1 = self.m1 * other.m1 + self.m2 * other.m3
+            new_m2 = self.m1 * other.m2 + self.m2 * other.m4
+            new_m3 = self.m3 * other.m1 + self.m4 * other.m3
+            new_m4 = (self.m3 * other.m2)[0] + self.m4 * other.m4
+            
+            return BlockMatrix(new_m1, new_m2, new_m3, new_m4, n=self.n)
+            
+        elif isinstance(other, BlockVector):
+            if self.n != other.n:
+                raise ValueError("Matrix and vector must have the same dimensions")
+            
+            # Block matrix-vector multiplication formula:
+            # [[m1, m2], [m3, m4]] * [[v_fix], [last_element]] =
+            # [[m1*v_fix + m2*last_element], [m3*v_fix + m4*last_element]]
+            
+            new_v_fix = self.m1 * other.v_fix + self.m2 * other.last_element
+            new_last_element = (self.m3 * other.v_fix)[0] + self.m4 * other.last_element
+            
+            return BlockVector(new_v_fix, new_last_element, n=self.n)
+            
+        else:
+            raise TypeError("Can only multiply BlockMatrix with BlockMatrix or BlockVector")
     
     def inverse(self) -> 'BlockMatrix':
         """
